@@ -9,7 +9,7 @@ import {
   Send, Snowflake, Copy, Check, Wand2, Music, AlertTriangle, Volume2,
   ThumbsUp, ThumbsDown, Mic, Loader2, Sparkles, Play, Pause, Square,
   Download, Headphones, ChevronDown, ChevronUp, Crown, Zap, Lock,
-  Search, Radio, X
+  Search, Radio, X, Activity, GitBranch
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -20,35 +20,45 @@ const PRESET_DATA: Record<string, { name: string; icon: typeof Snowflake; desc: 
   techno: { name: "Techno", icon: Zap, desc: "Industrial 138" },
 };
 
-// ─── Voice Input Hook ────────────────────────────────────────────────────────
-function useVoiceInput(onTranscript: (text: string) => void) {
+// ─── Voice Input Hook (auto-sends after transcription) ───────────────────────
+function useVoiceInput(onTranscript: (text: string) => void, autoSend?: (text: string) => void) {
   const { isListening, setIsListening } = useStore();
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   const startListening = useCallback(() => {
     const SR = (window as unknown as Record<string, unknown>).SpeechRecognition || (window as unknown as Record<string, unknown>).webkitSpeechRecognition;
-    if (!SR) { toast.error("Voice input not supported in this browser"); return; }
+    if (!SR) { toast.error("Voice input not supported"); return; }
 
     const rec = new (SR as new () => SpeechRecognition)();
-    rec.continuous = false;
-    rec.interimResults = true;
-    rec.lang = "en-US";
+    rec.continuous = false; rec.interimResults = true; rec.lang = "en-US";
+
+    let finalTranscript = "";
 
     rec.onresult = (e: SpeechRecognitionEvent) => {
-      const transcript = Array.from(e.results).map(r => r[0].transcript).join("");
-      if (e.results[e.results.length - 1].isFinal) {
-        onTranscript(transcript);
-        setIsListening(false);
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const transcript = e.results[i][0].transcript;
+        if (e.results[i].isFinal) finalTranscript += transcript;
+        else interim += transcript;
+      }
+      // Live update
+      if (interim) onTranscript(finalTranscript + interim);
+    };
+
+    rec.onend = () => {
+      setIsListening(false);
+      if (finalTranscript.trim()) {
+        onTranscript(finalTranscript.trim());
+        if (autoSend) setTimeout(() => autoSend(finalTranscript.trim()), 300);
       }
     };
 
-    rec.onerror = () => { setIsListening(false); };
-    rec.onend = () => { setIsListening(false); };
-
+    rec.onerror = () => setIsListening(false);
     recognitionRef.current = rec;
     rec.start();
     setIsListening(true);
-  }, [onTranscript, setIsListening]);
+    toast.info("Listening... speak now");
+  }, [onTranscript, autoSend, setIsListening]);
 
   const stopListening = useCallback(() => {
     recognitionRef.current?.stop();
@@ -58,120 +68,195 @@ function useVoiceInput(onTranscript: (text: string) => void) {
   return { startListening, stopListening, isListening };
 }
 
-// ─── Status Orb (Cube) Component ─────────────────────────────────────────────
+// ─── Waveform Visualizer ─────────────────────────────────────────────────────
+function WaveformVisualizer({ audioUrl }: { audioUrl: string | null }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
+
+  useEffect(() => {
+    if (!audioUrl || !canvasRef.current) return;
+
+    const audio = new Audio(audioUrl);
+    const ctx = new AudioContext();
+    const src = ctx.createMediaElementSource(audio);
+    const anl = ctx.createAnalyser();
+    anl.fftSize = 256;
+    src.connect(anl);
+    anl.connect(ctx.destination);
+    setAnalyser(anl);
+
+    const canvas = canvasRef.current;
+    const c = canvas.getContext("2d")!;
+    const buffer = new Uint8Array(anl.frequencyBinCount);
+
+    const draw = () => {
+      if (!canvas) return;
+      anl.getByteFrequencyData(buffer);
+      c.fillStyle = "#111B24";
+      c.fillRect(0, 0, canvas.width, canvas.height);
+
+      const barWidth = (canvas.width / buffer.length) * 2.5;
+      let x = 0;
+      for (let i = 0; i < buffer.length; i++) {
+        const h = (buffer[i] / 255) * canvas.height;
+        const gradient = c.createLinearGradient(0, canvas.height - h, 0, canvas.height);
+        gradient.addColorStop(0, "#00C8E0");
+        gradient.addColorStop(1, "rgba(0,200,224,0.2)");
+        c.fillStyle = gradient;
+        c.fillRect(x, canvas.height - h, barWidth, h);
+        x += barWidth + 1;
+      }
+      requestAnimationFrame(draw);
+    };
+
+    draw();
+    audio.play();
+
+    return () => { audio.pause(); ctx.close(); };
+  }, [audioUrl]);
+
+  if (!audioUrl) return null;
+  return <canvas ref={canvasRef} width={400} height={80} className="w-full rounded-lg mt-3" style={{ background: "var(--tim-bg-deep)" }} />;
+}
+
+// ─── Status Orb ──────────────────────────────────────────────────────────────
 function StatusOrb() {
   const { timStatus } = useStore();
-  const { startListening, stopListening, isListening } = useVoiceInput((text) => {
-    // Voice transcript is handled by parent
-  });
-
   const isOnline = timStatus === "online";
   const isThinking = timStatus === "thinking";
   const isOffline = timStatus === "offline";
 
   return (
-    <button
-      onClick={() => { if (isListening) stopListening(); }}
-      className="relative w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:scale-110"
-      style={{
-        background: isOnline ? "rgba(0,200,224,0.12)" : isOffline ? "rgba(239,68,68,0.1)" : "rgba(255,176,32,0.1)",
-        border: `1px solid ${isOnline ? "rgba(0,200,224,0.25)" : isOffline ? "rgba(239,68,68,0.2)" : "rgba(255,176,32,0.2)"}`,
-      }}
-      title={isOnline ? "T.I.M. online — click for voice" : isOffline ? "T.I.M. offline" : isThinking ? "T.I.M. thinking..." : "Connecting..."}
-    >
-      <Radio className={`w-4 h-4 ${isOnline ? "text-[var(--tim-accent)]" : isOffline ? "text-[var(--tim-red)]" : "text-[var(--tim-amber)]"}`} />
-      {isOnline && (
-        <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[var(--tim-accent)] animate-pulse" style={{ boxShadow: "0 0 6px var(--tim-accent)" }} />
-      )}
-      {isThinking && (
-        <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[var(--tim-amber)] animate-pulse" />
-      )}
-    </button>
+    <div className="relative w-7 h-7 rounded-lg flex items-center justify-center" style={{
+      background: isOnline ? "rgba(0,200,224,0.12)" : isOffline ? "rgba(239,68,68,0.1)" : "rgba(255,176,32,0.1)",
+      border: `1px solid ${isOnline ? "rgba(0,200,224,0.3)" : isOffline ? "rgba(239,68,68,0.2)" : "rgba(255,176,32,0.2)"}`,
+    }} title={isOnline ? "T.I.M. online" : isOffline ? "T.I.M. offline" : "T.I.M. thinking..."}>
+      <Radio className={`w-3.5 h-3.5 ${isOnline ? "text-[var(--tim-accent)]" : isOffline ? "text-[var(--tim-red)]" : "text-[var(--tim-amber)]"}`} />
+      <span className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ${isOnline ? "bg-[var(--tim-accent)] animate-pulse" : isThinking ? "bg-[var(--tim-amber)] animate-pulse" : isOffline ? "bg-[var(--tim-red)]" : "bg-[var(--tim-amber)]"}`} style={isOnline ? { boxShadow: "0 0 6px var(--tim-accent)" } : {}} />
+    </div>
   );
 }
-
-export { StatusOrb };
 
 // ─── Chat Panel ──────────────────────────────────────────────────────────────
 function ChatPanel() {
   const { messages, addMessage, isLoading, setIsLoading, setCurrentOutput, setTimStatus } = useStore();
-  const { user, tier, canUseClaude } = useAuth();
+  const { user, tier, canUseClaude, isGuest } = useAuth();
   const [input, setInput] = useState("");
   const [hasWelcomed, setHasWelcomed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  // tRPC
   const generateMutation = trpc.agent.generate.useMutation();
+  const extendMutation = trpc.agent.extend.useMutation();
   const initQuery = trpc.agent.init.useQuery(
     { userName: user?.name || "", isNew: !user?.name },
     { enabled: !hasWelcomed, staleTime: Infinity }
   );
   const logMutation = trpc.generation.log.useMutation();
-  const { data: genStatus } = trpc.generation.status.useQuery(undefined, { enabled: !!user, staleTime: 1000 * 30 });
+  const saveMsgMutation = trpc.session.saveMessage.useMutation();
+  const createSessionMutation = trpc.session.create.useMutation();
+  const { data: genStatus } = trpc.generation.status.useQuery(undefined, { enabled: !!user && !isGuest, staleTime: 1000 * 30 });
 
   const remaining = genStatus?.remaining ?? (tier === "pro" ? 999 : tier === "creator" ? 3 : 1);
 
-  // Welcome message on first load
+  // Welcome message on load
   useEffect(() => {
     if (initQuery.data && !hasWelcomed) {
-      const greeting = initQuery.data.greeting;
-      addMessage({
-        id: Date.now().toString(36) + "_welcome",
-        role: "assistant",
-        content: greeting,
-        timestamp: Date.now(),
-      });
+      addMessage({ id: Date.now().toString(36) + "_w", role: "assistant", content: initQuery.data.greeting, timestamp: Date.now() });
       setTimStatus(initQuery.data.status === "online" ? "online" : "offline");
       setHasWelcomed(true);
     }
     if (initQuery.isError && !hasWelcomed) {
-      addMessage({
-        id: Date.now().toString(36) + "_welcome",
-        role: "assistant",
-        content: "Hey, I'm T.I.M. — your AI producer. What track are we making today?",
-        timestamp: Date.now(),
-      });
-      setTimStatus("offline");
-      setHasWelcomed(true);
+      addMessage({ id: Date.now().toString(36) + "_w", role: "assistant", content: "Hey, I'm T.I.M. — your AI producer. What track are we making today?", timestamp: Date.now() });
+      setTimStatus("offline"); setHasWelcomed(true);
     }
   }, [initQuery.data, initQuery.isError, hasWelcomed, addMessage, setTimStatus]);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
-  useEffect(() => {
-    if (inputRef.current) { inputRef.current.style.height = "auto"; inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 160)}px`; }
-  }, [input]);
+  useEffect(() => { if (inputRef.current) { inputRef.current.style.height = "auto"; inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 160)}px`; } }, [input]);
 
-  const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
-    if (remaining <= 0) { toast.error("Daily limit reached. Upgrade for more."); return; }
+  // Ensure we have a session
+  const ensureSession = useCallback(async () => {
+    if (activeSessionId) return activeSessionId;
+    // Create a default session
+    try {
+      const result = await createSessionMutation.mutateAsync({ title: "New Session" });
+      setActiveSessionId(result.id);
+      return result.id;
+    } catch { return null; }
+  }, [activeSessionId, createSessionMutation]);
 
-    const userMsg: ChatMessage = { id: Date.now().toString(36), role: "user", content: input.trim(), timestamp: Date.now() };
+  const doSend = useCallback(async (text: string) => {
+    if (!text.trim() || isLoading) return;
+    if (remaining <= 0) { toast.error("Daily limit reached."); return; }
+
+    const userMsg: ChatMessage = { id: Date.now().toString(36), role: "user", content: text.trim(), timestamp: Date.now() };
     addMessage(userMsg);
     setInput("");
     setIsLoading(true);
     setTimStatus("thinking");
+
+    // Save to DB
+    const sid = await ensureSession();
+    if (sid) {
+      try { await saveMsgMutation.mutateAsync({ sessionId: sid, role: "user", content: userMsg.content }); } catch { /* ok */ }
+    }
 
     try {
       const result = await generateMutation.mutateAsync({ message: userMsg.content });
       if (result && typeof result === "object") {
         const r = result as Record<string, unknown>;
         const so = r.structuredOutput as StructuredOutput | undefined;
-        addMessage({ id: Date.now().toString(36) + "_a", role: "assistant", content: (r.response as string) || "Here's your track:", timestamp: Date.now(), structuredOutput: so });
+        const assistantMsg: ChatMessage = { id: Date.now().toString(36) + "_a", role: "assistant", content: (r.response as string) || "Here's your track:", timestamp: Date.now(), structuredOutput: so };
+        addMessage(assistantMsg);
         if (so) setCurrentOutput(so);
         setTimStatus("online");
-        if (user) { try { await logMutation.mutateAsync({ prompt: userMsg.content }); } catch { /* ok */ } }
+
+        // Save assistant message
+        if (sid && so) {
+          try { await saveMsgMutation.mutateAsync({ sessionId: sid, role: "assistant", content: assistantMsg.content, structuredOutput: so as Record<string, unknown> }); } catch { /* ok */ }
+        }
+
+        if (user && !isGuest) { try { await logMutation.mutateAsync({ prompt: userMsg.content }); } catch { /* ok */ } }
       }
     } catch (err) {
       addMessage({ id: Date.now().toString(36) + "_e", role: "assistant", content: `Error: ${err instanceof Error ? err.message : "Failed"}. Try again.`, timestamp: Date.now() });
       setTimStatus("offline");
       toast.error(err instanceof Error ? err.message : "Failed");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    } finally { setIsLoading(false); }
+  }, [isLoading, remaining, addMessage, setIsLoading, setTimStatus, setCurrentOutput, ensureSession, saveMsgMutation, generateMutation, logMutation, user, isGuest]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } };
+  // Handle Extend
+  const handleExtend = useCallback(async () => {
+    const { currentOutput } = useStore.getState();
+    if (!currentOutput) { toast.error("Generate a track first before extending."); return; }
+    if (remaining <= 0) { toast.error("Daily limit reached."); return; }
+
+    setIsLoading(true);
+    setTimStatus("thinking");
+    try {
+      const result = await extendMutation.mutateAsync({
+        previousStyle: currentOutput.styleField,
+        previousLyrics: currentOutput.lyrics,
+        layerNumber: 1,
+        instruction: "Continue the story naturally",
+      });
+      if (result && typeof result === "object") {
+        const r = result as Record<string, unknown>;
+        const so = r.structuredOutput as StructuredOutput | undefined;
+        addMessage({ id: Date.now().toString(36) + "_ext", role: "assistant", content: (r.response as string) || "Extended track:", timestamp: Date.now(), structuredOutput: so });
+        if (so) setCurrentOutput(so);
+        setTimStatus("online");
+        toast.success("Extended! Layer added.");
+      }
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Extend failed"); setTimStatus("offline"); }
+    finally { setIsLoading(false); }
+  }, [remaining, addMessage, setIsLoading, setTimStatus, setCurrentOutput, extendMutation]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(input); } };
 
   const handlePreset = async (presetId: string) => {
     if (remaining <= 0) { toast.error("Daily limit reached."); return; }
@@ -189,11 +274,11 @@ function ChatPanel() {
     finally { setIsLoading(false); }
   };
 
-  // Voice input handler
-  const { startListening } = useVoiceInput((text) => {
-    setInput(text);
-    toast.success(`Voice: "${text}"`);
-  });
+  // Voice input with auto-send
+  const { startListening, isListening } = useVoiceInput(
+    (text) => setInput(text),
+    (text) => doSend(text)
+  );
 
   const filteredMessages = searchQuery
     ? messages.filter(m => m.content.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -203,21 +288,15 @@ function ChatPanel() {
     <div className="flex flex-col h-full">
       {/* Messages */}
       <div className="flex-1 overflow-y-auto space-y-4 mb-4 min-h-0 px-1">
-        {filteredMessages.length === 0 && !initQuery.isLoading ? (
-          <div className="flex flex-col items-center justify-center h-full text-center px-8">
+        {initQuery.isLoading && !hasWelcomed && (
+          <div className="flex flex-col items-center justify-center h-full text-center">
             <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 animate-pulse" style={{ background: "rgba(0,200,224,0.08)", border: "1px solid rgba(0,200,224,0.15)" }}>
-              <Wand2 className="w-8 h-8 text-[var(--tim-accent)]" />
+              <Activity className="w-8 h-8 text-[var(--tim-accent)]" />
             </div>
-            {!canUseClaude && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-md text-xs mb-4" style={{ background: "rgba(255,176,32,0.08)", border: "1px solid rgba(255,176,32,0.15)" }}>
-                <Lock className="w-3.5 h-3.5 text-[var(--tim-amber)]" />
-                <span className="text-[var(--tim-amber)]">Sign in for Claude AI + unlimited generations</span>
-              </div>
-            )}
+            <p className="text-sm text-[var(--tim-text-secondary)]">Connecting to T.I.M...</p>
           </div>
-        ) : (
-          filteredMessages.map((msg) => <MessageBubble key={msg.id} message={msg} />)
         )}
+        {filteredMessages.map((msg) => <MessageBubble key={msg.id} message={msg} onExtend={handleExtend} />)}  
         {isLoading && (
           <div className="flex items-start gap-3 px-2">
             <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: "rgba(0,200,224,0.15)" }}>
@@ -229,9 +308,7 @@ function ChatPanel() {
                 <span className="text-[11px] text-[var(--tim-text-muted)] animate-pulse">thinking...</span>
               </div>
               <div className="flex gap-1.5">
-                <div className="typing-dot" />
-                <div className="typing-dot" />
-                <div className="typing-dot" />
+                <div className="typing-dot" /><div className="typing-dot" /><div className="typing-dot" />
               </div>
             </div>
           </div>
@@ -239,38 +316,40 @@ function ChatPanel() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Area */}
+      {/* Input */}
       <div className="border-t border-[var(--tim-border)] pt-4 flex-shrink-0">
         <div className="flex items-center justify-between mb-2 px-1">
           <span className={`text-[11px] font-mono ${remaining === 0 ? "text-[var(--tim-red)]" : "text-[var(--tim-text-muted)]"}`}>
             {tier === "pro" ? <span className="flex items-center gap-1"><Crown className="w-3 h-3 text-[var(--tim-amber)]" />Unlimited</span> : <span>{remaining}/{tier === "creator" ? 3 : 1} today</span>}
           </span>
-          {!canUseClaude && <span className="tim-badge-amber text-[11px]"><Lock className="w-3 h-3" />Claude locked</span>}
+          <div className="flex items-center gap-2">
+            {!canUseClaude && <span className="tim-badge-amber text-[11px]"><Lock className="w-3 h-3" />Claude locked</span>}
+            {isListening && <span className="tim-badge-cyan text-[11px] animate-pulse"><Mic className="w-3 h-3" />Listening...</span>}
+          </div>
         </div>
 
         <div className="tim-panel p-3">
           <div className="flex items-start gap-3">
             <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
-              placeholder="Describe your track idea..." rows={1}
-              className="flex-1 bg-transparent text-sm text-[var(--tim-text)] placeholder:text-[var(--tim-text-muted)] resize-none focus:outline-none min-h-[40px] max-h-[160px] py-2" />
+              placeholder={isListening ? "Listening... speak now" : "Describe your track idea..."}
+              rows={1} disabled={isLoading}
+              className="flex-1 bg-transparent text-sm text-[var(--tim-text)] placeholder:text-[var(--tim-text-muted)] resize-none focus:outline-none min-h-[40px] max-h-[160px] py-2 disabled:opacity-50" />
             <div className="flex items-center gap-1.5 flex-shrink-0">
-              {/* Voice button */}
-              <button onClick={startListening} className="p-2 rounded-lg text-[var(--tim-text-secondary)] hover:text-[var(--tim-accent)] hover:bg-[rgba(0,200,224,0.08)] transition-colors" title="Voice input">
+              <button onClick={isListening ? () => {} : startListening} className={`p-2 rounded-lg transition-colors ${isListening ? "text-[var(--tim-accent)] bg-[rgba(0,200,224,0.1)] animate-pulse" : "text-[var(--tim-text-secondary)] hover:text-[var(--tim-accent)] hover:bg-[rgba(0,200,224,0.08)]"}`} title="Voice input (auto-sends)">
                 <Mic className="w-4 h-4" />
               </button>
-              {/* Preset buttons */}
               {Object.entries(PRESET_DATA).map(([id, p]) => (
                 <button key={id} onClick={() => handlePreset(id)} className="p-1.5 rounded-md text-[var(--tim-text-secondary)] hover:text-[var(--tim-accent)] hover:bg-[rgba(0,200,224,0.08)] transition-colors" title={p.name}>
                   <p.icon className="w-4 h-4" />
                 </button>
               ))}
-              <button onClick={handleSend} disabled={!input.trim() || isLoading || remaining <= 0} className="tim-btn-primary p-2.5 rounded-lg">
+              <button onClick={() => doSend(input)} disabled={!input.trim() || isLoading || remaining <= 0} className="tim-btn-primary p-2.5 rounded-lg">
                 <Send className="w-4 h-4" />
               </button>
             </div>
           </div>
           <div className="flex items-center justify-between mt-2 pt-2 border-t border-[var(--tim-border)]">
-            <span className="text-[11px] text-[var(--tim-text-muted)]">Shift+Enter for new line</span>
+            <span className="text-[11px] text-[var(--tim-text-muted)]">Shift+Enter for new line · Voice auto-sends</span>
             <span className="text-[11px] text-[var(--tim-text-muted)] font-mono">{input.length}</span>
           </div>
         </div>
@@ -289,9 +368,10 @@ function ChatPanel() {
   );
 }
 
-// ─── Message Bubble ──────────────────────────────────────────────────────────
-function MessageBubble({ message }: { message: ChatMessage }) {
+// ─── Message Bubble (with Extend button) ─────────────────────────────────────
+function MessageBubble({ message, onExtend }: { message: ChatMessage; onExtend: () => void }) {
   const [copied, setCopied] = useState(false);
+  const { canExtend } = useAuth();
   const isUser = message.role === "user";
 
   const handleCopy = async () => { await navigator.clipboard.writeText(message.content); setCopied(true); setTimeout(() => setCopied(false), 2000); };
@@ -325,7 +405,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           </button>
         </div>
         <div className="text-sm text-[var(--tim-text)] whitespace-pre-wrap leading-relaxed">{message.content}</div>
-        {message.structuredOutput && <StructuredPreview output={message.structuredOutput} />}
+        {message.structuredOutput && <StructuredPreview output={message.structuredOutput} onExtend={onExtend} canExtend={canExtend} />}
         <span className="text-[10px] text-[var(--tim-text-muted)] mt-1 block">{new Date(message.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
         <FeedbackButtons messageId={message.id} />
       </div>
@@ -337,13 +417,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 function FeedbackButtons({ messageId }: { messageId: string }) {
   const [feedback, setFeedback] = useState<"up" | "down" | null>(null);
   const rateMutation = trpc.output.update.useMutation();
-
-  const handle = async (rating: "up" | "down") => {
-    setFeedback(rating);
-    try { const id = parseInt(messageId); if (!isNaN(id)) await rateMutation.mutateAsync({ id, rating }); } catch { /* ok */ }
-    toast.success(rating === "up" ? "Thanks!" : "Noted.");
-  };
-
+  const handle = async (rating: "up" | "down") => { setFeedback(rating); try { const id = parseInt(messageId); if (!isNaN(id)) await rateMutation.mutateAsync({ id, rating }); } catch { /* ok */ } };
   return (
     <div className="flex items-center gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
       <span className="text-[10px] text-[var(--tim-text-muted)] mr-1">Helpful?</span>
@@ -353,10 +427,9 @@ function FeedbackButtons({ messageId }: { messageId: string }) {
   );
 }
 
-// ─── Structured Preview ──────────────────────────────────────────────────────
-function StructuredPreview({ output }: { output: StructuredOutput }) {
+// ─── Structured Preview (with working Extend) ────────────────────────────────
+function StructuredPreview({ output, onExtend, canExtend }: { output: StructuredOutput; onExtend: () => void; canExtend: boolean }) {
   const [expanded, setExpanded] = useState(true);
-  const { canExtend } = useAuth();
   const getCharClass = (count: number) => count > 200 ? "char-count-red" : count > 180 ? "char-count-amber" : "char-count-safe";
 
   return (
@@ -385,32 +458,20 @@ function StructuredPreview({ output }: { output: StructuredOutput }) {
                 <label className="tim-label">Lyrics</label>
                 <span className={`text-xs font-mono ${output.lyrics.length > 3000 ? "char-count-red" : "char-count-safe"}`}>{output.lyrics.length}/3000</span>
               </div>
-              <div className="tim-panel p-3 max-h-48 overflow-y-auto group relative" style={{ background: "var(--tim-bg-deep)" }}>
+              <div className="tim-panel p-3 max-h-48 overflow-y-auto group relative rounded-lg" style={{ background: "var(--tim-bg-deep)" }}>
                 <pre className="text-xs text-[var(--tim-text-secondary)] whitespace-pre-wrap font-mono">{output.lyrics}</pre>
                 <CopyBtn text={output.lyrics} />
               </div>
             </div>
           )}
-          {output.excludeField && (
-            <div><label className="tim-label mb-1.5 block">Exclude</label><CopyBox text={output.excludeField} color="red" /></div>
-          )}
-          {output.listenFor.length > 0 && (
-            <div><label className="tim-label mb-2 block">Listen For</label><div className="flex flex-wrap gap-1.5">{output.listenFor.map((item, i) => <span key={i} className="tim-badge-cyan"><Volume2 className="w-3 h-3" />{item}</span>)}</div></div>
-          )}
-          {output.risks.length > 0 && (
-            <div><label className="tim-label mb-2 block">Risks</label><div className="flex flex-wrap gap-1.5">{output.risks.map((item, i) => <span key={i} className="tim-badge-amber"><AlertTriangle className="w-3 h-3" />{item}</span>)}</div></div>
-          )}
-          {output.nextStep && (
-            <div className="flex items-start gap-3 p-4 rounded-lg" style={{ background: "rgba(0,200,224,0.05)", border: "1px solid rgba(0,200,224,0.1)" }}>
-              <Sparkles className="w-4 h-4 text-[var(--tim-accent)] flex-shrink-0 mt-0.5" /><p className="text-xs text-[var(--tim-text)]">{output.nextStep}</p>
-            </div>
-          )}
+          {output.excludeField && <div><label className="tim-label mb-1.5 block">Exclude</label><CopyBox text={output.excludeField} color="red" /></div>}
+          {output.listenFor.length > 0 && <div><label className="tim-label mb-2 block">Listen For</label><div className="flex flex-wrap gap-1.5">{output.listenFor.map((item, i) => <span key={i} className="tim-badge-cyan"><Volume2 className="w-3 h-3" />{item}</span>)}</div></div>}
+          {output.risks.length > 0 && <div><label className="tim-label mb-2 block">Risks</label><div className="flex flex-wrap gap-1.5">{output.risks.map((item, i) => <span key={i} className="tim-badge-amber"><AlertTriangle className="w-3 h-3" />{item}</span>)}</div></div>}
+          {output.nextStep && <div className="flex items-start gap-3 p-4 rounded-lg" style={{ background: "rgba(0,200,224,0.05)", border: "1px solid rgba(0,200,224,0.1)" }}><Sparkles className="w-4 h-4 text-[var(--tim-accent)] flex-shrink-0 mt-0.5" /><p className="text-xs text-[var(--tim-text)]">{output.nextStep}</p></div>}
           <div className="flex gap-2 pt-2">
-            <button className="flex-1 tim-btn-primary text-xs py-2.5 rounded-lg" onClick={() => { navigator.clipboard.writeText(JSON.stringify({ style: output.styleField, lyrics: output.lyrics, exclude: output.excludeField }, null, 2)); toast.success("Suno payload copied!"); }}>
-              <Copy className="w-3.5 h-3.5" />Copy Suno Payload
-            </button>
+            <button className="flex-1 tim-btn-primary text-xs py-2.5 rounded-lg" onClick={() => { navigator.clipboard.writeText(JSON.stringify({ style: output.styleField, lyrics: output.lyrics, exclude: output.excludeField }, null, 2)); toast.success("Suno payload copied!"); }}><Copy className="w-3.5 h-3.5" />Copy Suno Payload</button>
             {canExtend ? (
-              <button className="flex-1 tim-btn-secondary text-xs py-2.5 rounded-lg" onClick={() => toast.info("Extend coming soon!")}><Sparkles className="w-3.5 h-3.5" />Extend</button>
+              <button className="flex-1 tim-btn-secondary text-xs py-2.5 rounded-lg" onClick={onExtend}><GitBranch className="w-3.5 h-3.5" />Extend</button>
             ) : (
               <button className="flex-1 text-xs py-2.5 flex items-center justify-center gap-1.5 rounded-lg opacity-50 cursor-not-allowed" style={{ background: "var(--tim-panel)", border: "1px solid var(--tim-border)", color: "var(--tim-text-muted)" }} disabled><Lock className="w-3.5 h-3.5" />Extend</button>
             )}
@@ -434,7 +495,7 @@ function SliderReadout({ label, value }: { label: string; value: number }) {
 function CopyBox({ text, color }: { text: string; color?: string }) {
   const [copied, setCopied] = useState(false);
   return (
-    <div className="tim-panel p-3 group relative" style={{ background: "var(--tim-bg-deep)" }}>
+    <div className="tim-panel p-3 group relative rounded-lg" style={{ background: "var(--tim-bg-deep)" }}>
       <p className={`text-sm font-mono leading-relaxed break-all pr-8 ${color === "red" ? "text-[var(--tim-red)]" : "text-[var(--tim-text)]"}`}>{text}</p>
       <button onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); toast.success("Copied!"); }} className="absolute top-2.5 right-2.5 p-1.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: "var(--tim-panel)", border: "1px solid var(--tim-border)" }}>
         {copied ? <Check className="w-3 h-3 text-[var(--tim-green)]" /> : <Copy className="w-3 h-3 text-[var(--tim-text-secondary)]" />}
@@ -477,9 +538,7 @@ function PreviewPanel() {
 
   const handlePlayPreview = async () => {
     if (isPreviewing) { stopPreview(); setIsPreviewing(false); setIsPlaying(false); }
-    else {
-      try { const inp = getDefaultInput(); if (currentOutput) { const m = currentOutput.styleField.match(/(\d+)\s*BPM/i); if (m) inp.bpm = parseInt(m[1]); } await playPreview(inp); setIsPreviewing(true); setIsPlaying(true); setTimeout(() => { setIsPreviewing(false); setIsPlaying(false); }, (60 / inp.bpm) * inp.bars * 4 * 1000); } catch { toast.error("Preview failed"); }
-    }
+    else { try { const inp = getDefaultInput(); if (currentOutput) { const m = currentOutput.styleField.match(/(\d+)\s*BPM/i); if (m) inp.bpm = parseInt(m[1]); } await playPreview(inp); setIsPreviewing(true); setIsPlaying(true); setTimeout(() => { setIsPreviewing(false); setIsPlaying(false); }, (60 / inp.bpm) * inp.bars * 4 * 1000); } catch { toast.error("Preview failed"); } }
   };
 
   const getCharClass = (c: number) => c > 200 ? "char-count-red" : c > 180 ? "char-count-amber" : "char-count-safe";
@@ -508,6 +567,8 @@ function PreviewPanel() {
           <button onClick={handlePlayPreview} disabled={isRendering} className="flex-1 tim-btn-secondary text-xs py-2.5 rounded-lg">{isPreviewing ? <><Square className="w-3.5 h-3.5" />Stop</> : <><Play className="w-3.5 h-3.5" />Preview</>}</button>
           <button onClick={handleGenerateSeed} disabled={isRendering || isPreviewing} className="flex-1 tim-btn-primary text-xs py-2.5 rounded-lg">{isRendering ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Rendering...</> : <><Music className="w-3.5 h-3.5" />Generate Seed</>}</button>
         </div>
+        {/* Waveform Visualizer */}
+        <WaveformVisualizer audioUrl={currentSeedUrl} />
         {audioResult && (
           <button onClick={() => { const a = document.createElement("a"); a.href = audioResult.audioUrl; a.download = `tim-seed-${Date.now()}.wav`; a.click(); toast.success("WAV downloaded"); }} className="w-full mt-3 text-xs text-[var(--tim-accent)] hover:text-[var(--tim-accent-hover)] flex items-center justify-center gap-1.5 py-2 rounded-md transition-colors hover:bg-[rgba(0,200,224,0.05)]">
             <Download className="w-3 h-3" />Download WAV
@@ -525,7 +586,7 @@ function PreviewPanel() {
           <div>
             <div className="flex items-center justify-between mb-2"><label className="tim-label">Style Field</label><span className={`text-xs font-mono ${getCharClass(currentOutput.styleFieldCharCount)}`}>{currentOutput.styleFieldCharCount}/200</span></div>
             <CopyBox text={currentOutput.styleField} />
-            {currentOutput.styleFieldCharCount > 200 && <p className="text-[11px] text-[var(--tim-red)] mt-1.5 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />Over 200 chars — may truncate</p>}
+            {currentOutput.styleFieldCharCount > 200 && <p className="text-[11px] text-[var(--tim-red)] mt-1.5 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />Over 200 chars</p>}
           </div>
           <div className="grid grid-cols-3 gap-4">
             <SliderReadout label="Weirdness" value={currentOutput.sliders.weirdness} />
