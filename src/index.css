@@ -1,0 +1,222 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 221 83% 53%;
+    --radius: 0.5rem;
+
+    /* T.I.M. Dark Studio Theme */
+    --tim-bg: #0B1118;
+    --tim-bg-deep: #070D14;
+    --tim-panel: #111B24;
+    --tim-panel-hover: #1A2632;
+    --tim-border: #1E2D3A;
+    --tim-border-light: #2A3F50;
+    --tim-accent: #00C8E0;
+    --tim-accent-hover: #00E0FF;
+    --tim-text: #E8EFF4;
+    --tim-text-secondary: #8A9BAE;
+    --tim-text-muted: #4A5D6F;
+    --tim-amber: #FFB020;
+    --tim-red: #EF4444;
+    --tim-green: #10B981;
+  }
+
+  * {
+    @apply border-[var(--tim-border)];
+  }
+
+  body {
+    background-color: var(--tim-bg);
+    color: var(--tim-text);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--tim-border-light);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--tim-text-muted);
+  }
+}
+
+@layer components {
+  .tim-panel {
+    @apply rounded-lg border;
+    background-color: var(--tim-panel);
+    border-color: var(--tim-border);
+  }
+
+  .tim-panel-hover {
+    transition: background-color 150ms, border-color 150ms;
+  }
+
+  .tim-panel-hover:hover {
+    background-color: var(--tim-panel-hover);
+    border-color: var(--tim-border-light);
+  }
+
+  .tim-input {
+    @apply rounded-md border px-3 py-2 text-sm outline-none transition-colors;
+    background-color: var(--tim-bg-deep);
+    border-color: var(--tim-border);
+    color: var(--tim-text);
+  }
+
+  .tim-input:focus {
+    border-color: var(--tim-accent);
+    box-shadow: 0 0 0 1px var(--tim-accent);
+  }
+
+  .tim-input::placeholder {
+    color: var(--tim-text-muted);
+  }
+
+  .tim-btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-all;
+    background-color: var(--tim-accent);
+    color: var(--tim-bg);
+  }
+
+  .tim-btn-primary:hover {
+    background-color: var(--tim-accent-hover);
+    transform: translateY(-1px);
+  }
+
+  .tim-btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .tim-btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm font-medium transition-all;
+    background-color: transparent;
+    border-color: var(--tim-border-light);
+    color: var(--tim-text-secondary);
+  }
+
+  .tim-btn-secondary:hover {
+    background-color: var(--tim-panel-hover);
+    border-color: var(--tim-accent);
+    color: var(--tim-text);
+  }
+
+  .tim-btn-secondary:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .tim-btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors;
+    color: var(--tim-text-secondary);
+  }
+
+  .tim-btn-ghost:hover {
+    background-color: var(--tim-panel-hover);
+    color: var(--tim-text);
+  }
+
+  .tim-badge-cyan {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium;
+    background-color: rgba(0, 200, 224, 0.1);
+    color: var(--tim-accent);
+    border: 1px solid rgba(0, 200, 224, 0.2);
+  }
+
+  .tim-badge-amber {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium;
+    background-color: rgba(255, 176, 32, 0.1);
+    color: var(--tim-amber);
+    border: 1px solid rgba(255, 176, 32, 0.2);
+  }
+
+  .tim-badge-green {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium;
+    background-color: rgba(16, 185, 129, 0.1);
+    color: var(--tim-green);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+  }
+
+  .tim-label {
+    @apply text-xs font-medium uppercase tracking-wide;
+    color: var(--tim-text-muted);
+  }
+
+  .char-count-safe {
+    color: var(--tim-green);
+  }
+
+  .char-count-amber {
+    color: var(--tim-amber);
+  }
+
+  .char-count-red {
+    color: var(--tim-red);
+  }
+
+  .status-ready {
+    @apply w-2 h-2 rounded-full;
+    background-color: var(--tim-green);
+    box-shadow: 0 0 6px var(--tim-green);
+  }
+
+  .status-busy {
+    @apply w-2 h-2 rounded-full;
+    background-color: var(--tim-amber);
+    box-shadow: 0 0 6px var(--tim-amber);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  .typing-dot {
+    @apply w-1.5 h-1.5 rounded-full;
+    background-color: var(--tim-accent);
+    animation: bounce 1.4s infinite ease-in-out both;
+  }
+
+  .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+  .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+
+  @keyframes bounce {
+    0%, 80%, 100% { transform: scale(0); }
+    40% { transform: scale(1); }
+  }
+}
