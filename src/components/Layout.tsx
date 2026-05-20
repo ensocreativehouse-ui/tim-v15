@@ -20,7 +20,7 @@ const navItems = [
 ];
 
 // ─── Status Orb (Cube) ──────────────────────────────────────────────────────
-function StatusOrb() {
+export function StatusOrb() {
   const { timStatus } = useStore();
   const isOnline = timStatus === "online";
   const isThinking = timStatus === "thinking";
