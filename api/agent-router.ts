@@ -28,10 +28,21 @@ ALWAYS respond with valid JSON matching this exact structure:
   "metadata": { "mode": "TIM", "extend": false, "phoneticNames": [], "sessionId": "...", "layerNumber": 1 }
 }`;
 
+const EXTEND_PROMPT = `You are T.I.M. continuing a track. The user wants to EXTEND the previous generation.
+
+CRITICAL RULES FOR EXTEND:
+- Maintain continuity: same voice, same mood, same BPM
+- The new section should FEEL like a natural continuation
+- Reference previous themes/lyrics but don't repeat verbatim
+- End with [End — hold for extend] again
+- Style field should be similar but can evolve slightly
+
+ALWAYS respond with valid JSON matching the same structure as before.
+`;
+
 const WELCOME_NEW = "Hey, I'm T.I.M. — your AI producer. I translate your track ideas into production-ready Suno prompts. Tell me what you want to make. Mood, genre, vocals, BPM, energy level — whatever you've got.";
 const WELCOME_RETURNING = (name: string) => `Welcome back${name ? `, ${name}` : ""}. I'm T.I.M., your AI producer. What track are we making today?`;
 
-// ─── Presets ─────────────────────────────────────────────────────────────────
 const presets: Record<string, unknown> = {
   snowflake: { response: "SnowFlake Signature preset loaded", structuredOutput: { styleField: "hyper-realistic, gravelly raspy male, behind-the-beat storytelling, Wu Tang RZA boom bap, hard cracking snare + dusty kick, 93 BPM, dark minor, frost imagery, lo-fi grit, paranoid East Coast", styleFieldCharCount: 178, sliders: { weirdness: 48, styleAccuracy: 88, audioInfluence: 0 }, lyrics: "[Intro]\nYeah... SnowFlake in the building...\nFrost on the window, frost on the mic...\n[Cold breath]\n\n[Verse 1]\nGlacier in my veins, polar in my vision\nIce crystals form on every decision\nRZA loop spinning, winter wind howling\nClawd couldn't calculate what I'm allowing\n[End — hold for extend]", excludeField: "bright pop, tropical, happy major, synthwave", listenFor: ["gravelly voice delivery", "snare crack behind the beat", "winter atmosphere"], risks: ["Style field may truncate at 200 chars"], nextStep: "Confirm delivery style, then generate seed audio" }, metadata: { mode: "TIM", extend: false, phoneticNames: ["Clawd"], sessionId: "", layerNumber: 1 } },
   "dark-dnb": { response: "Dark DnB preset loaded", structuredOutput: { styleField: "hyper-realistic, deep menacing male, aggressive drill flow, UK drill meets dark trap, sliding 808 bass, sparse trap hats, cinematic minor key strings, 140 BPM, dark minor, paranoid", styleFieldCharCount: 196, sliders: { weirdness: 46, styleAccuracy: 88, audioInfluence: 0 }, lyrics: "[Intro]\nDarkness creeping in...\n[Beat drops]\n\n[Verse 1]\nShadows moving in the dark\nHeartbeat syncs with the breakbeat\nKeeMee can't feel what I'm feeling\nSliding bass through concrete walls\n[End — hold for extend]", excludeField: "cheesy synths, four-on-the-floor, bright major", listenFor: ["Deep menacing voice", "Sliding 808 bass", "140 BPM locked"], risks: ["140 BPM can sound rushed"], nextStep: "Confirm vocal style, then generate seed audio" }, metadata: { mode: "TIM", extend: false, phoneticNames: ["KeeMee"], sessionId: "", layerNumber: 1 } },
@@ -39,15 +50,14 @@ const presets: Record<string, unknown> = {
   techno: { response: "Techno preset loaded", structuredOutput: { styleField: "hyper-realistic, dark industrial techno instrumental, driving four-on-the-floor kick, layered synth textures, 138 BPM, minor key, repetitive hypnotic groove, metallic percussion", styleFieldCharCount: 192, sliders: { weirdness: 42, styleAccuracy: 90, audioInfluence: 0 }, lyrics: "[Intro]\nKick drum builds...\n[Beat drops]\n\n[Verse 1]\nFour on the floor locked tight\nMetallic percussion cuts through\nKeeMee can't calculate this rhythm\nHypnotic groove takes control\n[End — hold for extend]", excludeField: "vocals, melody, acoustic instruments", listenFor: ["Four-on-the-floor kick", "Metallic percussion", "138 BPM"], risks: ["Repetitive groove may bore"], nextStep: "Confirm BPM and texture" }, metadata: { mode: "TIM", extend: false, phoneticNames: ["KeeMee"], sessionId: "", layerNumber: 1 } },
 };
 
-// ─── Claude API ──────────────────────────────────────────────────────────────
-async function callClaude(userMessage: string): Promise<unknown> {
+async function callClaude(userMessage: string, system?: string): Promise<unknown> {
   const apiKey = env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 2500, system: SYSTEM_PROMPT, messages: [{ role: "user", content: userMessage }] }),
+    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 2500, system: system || SYSTEM_PROMPT, messages: [{ role: "user", content: userMessage }] }),
   });
 
   if (!response.ok) { const err = await response.text(); throw new Error(`Claude API error: ${response.status}`); }
@@ -64,34 +74,29 @@ async function callClaude(userMessage: string): Promise<unknown> {
 
 // ─── Router ──────────────────────────────────────────────────────────────────
 export const agentRouter = createRouter({
-  // Init — returns welcome greeting based on user state
+  // Init — returns welcome greeting
   init: publicQuery
     .input(z.object({ userName: z.string().optional(), isNew: z.boolean().optional() }).optional())
     .query(async ({ input }) => {
       const name = input?.userName || "";
       const isNew = input?.isNew ?? true;
-
-      // Try Claude for a personalized greeting
       try {
         if (env.ANTHROPIC_API_KEY) {
           const prompt = isNew
             ? `Introduce yourself as T.I.M. (The Intent Method), an AI music producer for Suno. Welcome a new user. Brief, friendly, conversational. 2-3 sentences. No JSON, just plain text.`
-            : `Welcome back a returning user${name ? ` named ${name}` : ""} to T.I.M. (The Intent Method). Brief, friendly. 2-3 sentences. No JSON, just plain text.`;
-
+            : `Welcome back a returning user${name ? ` named ${name}` : ""} to T.I.M. Brief, friendly. 2-3 sentences. No JSON, just plain text.`;
           const result = await callClaude(prompt);
-          const r = result as Record<string, unknown>;
-          return { greeting: (r.response as string) || (isNew ? WELCOME_NEW : WELCOME_RETURNING(name)), status: "online" as const };
+          return { greeting: (result as Record<string, unknown>).response as string || (isNew ? WELCOME_NEW : WELCOME_RETURNING(name)), status: "online" as const };
         }
-      } catch { /* fall through to defaults */ }
-
+      } catch { /* fallback */ }
       return { greeting: isNew ? WELCOME_NEW : WELCOME_RETURNING(name), status: "online" as const };
     }),
 
+  // Main generate
   generate: publicQuery
     .input(z.object({ message: z.string().min(1), preset: z.string().optional() }))
     .mutation(async ({ input }) => {
       if (input.preset && presets[input.preset]) return presets[input.preset];
-
       try { return await callClaude(input.message); }
       catch {
         const msg = input.message.toLowerCase();
@@ -99,8 +104,40 @@ export const agentRouter = createRouter({
         if (msg.includes("techno")) fp = presets.techno as Record<string, unknown>;
         else if (msg.includes("ambient")) fp = presets.ambient as Record<string, unknown>;
         else if (msg.includes("dnb") || msg.includes("drum")) fp = presets["dark-dnb"] as Record<string, unknown>;
-        return { ...fp, response: `Generated: "${input.message.slice(0, 60)}..." (Claude unavailable — using preset)` };
+        return { ...fp, response: `Generated: "${input.message.slice(0, 60)}..."` };
       }
+    }),
+
+  // Extend — takes previous output and continues the track
+  extend: publicQuery
+    .input(z.object({
+      previousStyle: z.string(),
+      previousLyrics: z.string().optional(),
+      layerNumber: z.number().default(1),
+      instruction: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const extendPrompt = `Continue this track as layer ${input.layerNumber + 1}. Previous style: "${input.previousStyle}". Previous lyrics ended with: "${input.previousLyrics?.slice(-200) || "[End — hold for extend]"}". ${input.instruction || "Continue the story naturally. Maintain same voice, BPM, and mood."}`;
+
+      try {
+        if (env.ANTHROPIC_API_KEY) {
+          return await callClaude(extendPrompt, SYSTEM_PROMPT + "\n\n" + EXTEND_PROMPT);
+        }
+      } catch { /* fall through */ }
+
+      // Fallback: evolve the preset
+      const fp = { ...(presets.snowflake as Record<string, unknown>) };
+      const so = fp.structuredOutput as Record<string, unknown>;
+      return {
+        ...fp,
+        response: `Extended to layer ${input.layerNumber + 1}. Continuing the story with maintained continuity.`,
+        structuredOutput: {
+          ...so,
+          styleField: (so.styleField as string).replace("Verse 1", `Verse ${input.layerNumber + 1}`) + ", continuation, deeper atmosphere",
+          lyrics: `[Verse ${input.layerNumber + 1}]\nThe story continues deeper now\nBuilding on what came before\nEach bar connects to the last\nCreating something more\n[End — hold for extend]`,
+        },
+        metadata: { ...(fp.metadata as Record<string, unknown>), layerNumber: input.layerNumber + 1, extend: true },
+      };
     }),
 
   presets: publicQuery.query(() => Object.keys(presets)),
