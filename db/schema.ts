@@ -12,7 +12,7 @@ import {
   date,
 } from "drizzle-orm/mysql-core";
 
-// ─── Users (extends Kimi OAuth user) ─────────────────────────────────────────
+// ─── Users ───────────────────────────────────────────────────────────────────
 export const users = mysqlTable("users", {
   id: serial("id").primaryKey(),
   unionId: varchar("unionId", { length: 255 }).notNull().unique(),
@@ -20,7 +20,6 @@ export const users = mysqlTable("users", {
   email: varchar("email", { length: 320 }),
   avatar: text("avatar"),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
-  // T.I.M. tier fields
   tier: mysqlEnum("tier", ["stock", "creator", "pro"]).default("stock").notNull(),
   trialActive: boolean("trialActive").default(false).notNull(),
   trialEndsAt: timestamp("trialEndsAt"),
@@ -34,15 +33,13 @@ export const users = mysqlTable("users", {
 });
 
 export type User = typeof users.$inferSelect;
-export type InsertUser = typeof users.$inferInsert;
 
-// ─── Sessions (music production sessions) ────────────────────────────────────
+// ─── Sessions (conversation sessions) ────────────────────────────────────────
 export const sessions = mysqlTable("sessions", {
   id: serial("id").primaryKey(),
   userId: bigint("userId", { mode: "number", unsigned: true }).notNull(),
   title: varchar("title", { length: 255 }).notNull(),
   mode: mysqlEnum("mode", ["TIM"]).default("TIM").notNull(),
-  conversationHistory: json("conversationHistory").$type<Record<string, unknown>[]>(),
   currentLayer: int("currentLayer").default(1).notNull(),
   extendChainActive: boolean("extendChainActive").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -50,7 +47,18 @@ export const sessions = mysqlTable("sessions", {
 });
 
 export type Session = typeof sessions.$inferSelect;
-export type InsertSession = typeof sessions.$inferInsert;
+
+// ─── Messages (chat messages per session) ────────────────────────────────────
+export const messages = mysqlTable("messages", {
+  id: serial("id").primaryKey(),
+  sessionId: bigint("sessionId", { mode: "number", unsigned: true }).notNull(),
+  role: mysqlEnum("role", ["user", "assistant"]).notNull(),
+  content: text("content").notNull(),
+  structuredOutput: json("structuredOutput"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Message = typeof messages.$inferSelect;
 
 // ─── Outputs (generated tracks) ──────────────────────────────────────────────
 export const outputs = mysqlTable("outputs", {
@@ -74,9 +82,8 @@ export const outputs = mysqlTable("outputs", {
 });
 
 export type Output = typeof outputs.$inferSelect;
-export type InsertOutput = typeof outputs.$inferInsert;
 
-// ─── Generation Log (tracks daily usage) ─────────────────────────────────────
+// ─── Generation Log ──────────────────────────────────────────────────────────
 export const generationLog = mysqlTable("generationLog", {
   id: serial("id").primaryKey(),
   userId: bigint("userId", { mode: "number", unsigned: true }).notNull(),
@@ -84,5 +91,3 @@ export const generationLog = mysqlTable("generationLog", {
   prompt: text("prompt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
-
-export type GenerationLog = typeof generationLog.$inferSelect;
