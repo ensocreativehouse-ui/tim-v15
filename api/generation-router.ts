@@ -2,7 +2,7 @@ import { z } from "zod";
 import { eq, and, count, gte } from "drizzle-orm";
 import { createRouter, publicQuery, authedQuery } from "./middleware";
 import { getDb } from "./queries/connection";
-import { generationLog, users } from "@db/schema";
+import { generationLog, users } from "../../../../../../db/schema";
 
 const TIER_LIMITS: Record<string, number> = {
   stock: 1,
