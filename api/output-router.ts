@@ -2,7 +2,7 @@ import { z } from "zod";
 import { eq, and, desc } from "drizzle-orm";
 import { createRouter, publicQuery, authedQuery } from "./middleware";
 import { getDb } from "./queries/connection";
-import { outputs, sessions } from "@db/schema";
+import { outputs, sessions } from "../../../../../../db/schema";
 
 export const outputRouter = createRouter({
   // List user's saved outputs
