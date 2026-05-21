@@ -2,7 +2,7 @@ import { z } from "zod";
 import { eq, desc } from "drizzle-orm";
 import { createRouter, authedQuery } from "./middleware";
 import { getDb } from "./queries/connection";
-import { sessions, messages } from "@db/schema";
+import { sessions, messages } from "../../../../../../db/schema";
 
 export const sessionRouter = createRouter({
   // List user's sessions with message count
