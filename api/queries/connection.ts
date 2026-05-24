@@ -1,18 +1,8 @@
-import { drizzle } from "drizzle-orm/mysql2";
-import { env } from "../lib/env";
-import * as schema from "../db/schema";
-import * as relations from "../db/relations";
+// ─── LEGACY DRIZZLE CONNECTION — DEPRECATED ──────────────────────────────────
+// NOT imported by the current api/timrouter.ts backend.
+// The active backend uses Supabase (api/lib/supabase.ts).
+// DATABASE_URL is no longer required for T.I.M. to run.
 
-const fullSchema = { ...schema, ...relations };
-
-let instance: ReturnType<typeof drizzle<typeof fullSchema>>;
-
-export function getDb() {
-  if (!instance) {
-    instance = drizzle(env.databaseUrl, {
-      mode: "planetscale",
-      schema: fullSchema,
-    });
-  }
-  return instance;
+export function getDb(): never {
+  throw new Error("Drizzle/MySQL backend is deprecated. Use Supabase (api/lib/supabase.ts) instead.");
 }
